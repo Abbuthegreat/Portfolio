@@ -1,14 +1,78 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Float, Environment } from "@react-three/drei";
+import { Float, Environment, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 
-// Robot built from primitives that follows the cursor
 function RobotModel() {
   const groupRef = useRef<THREE.Group>(null);
   const [mouse, setMouse] = useState({ x: 0, y: 0 });
-  const eyeLeftRef = useRef<THREE.Mesh>(null);
-  const eyeRightRef = useRef<THREE.Mesh>(null);
+  const eyeMeshes = useRef<THREE.Mesh[]>([]);
+  const { scene } = useGLTF("/models/robot.glb");
+
+  const neonGreen = useMemo(() => new THREE.Color("hsl(160, 100%, 50%)"), []);
+  const darkMetal = useMemo(() => new THREE.Color("hsl(220, 20%, 12%)"), []);
+  const metalGray = useMemo(() => new THREE.Color("hsl(220, 10%, 25%)"), []);
+
+  // Clone scene and apply theme colors + find eyes
+  const clonedScene = useMemo(() => {
+    const cloned = scene.clone(true);
+    const eyes: THREE.Mesh[] = [];
+
+    cloned.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        const name = mesh.name.toLowerCase();
+
+        // Try to detect eyes by name
+        const isEye =
+          name.includes("eye") ||
+          name.includes("pupil") ||
+          name.includes("iris") ||
+          name.includes("cornea") ||
+          name.includes("lens");
+
+        if (isEye) {
+          eyes.push(mesh);
+          // Make eyes glow neon green
+          mesh.material = new THREE.MeshStandardMaterial({
+            color: neonGreen,
+            emissive: neonGreen,
+            emissiveIntensity: 3,
+          });
+        } else {
+          // Theme the rest of the robot
+          const mat = mesh.material as THREE.MeshStandardMaterial;
+          if (mat && mat.isMeshStandardMaterial) {
+            const newMat = mat.clone();
+            const lightness = mat.color
+              ? (mat.color.r + mat.color.g + mat.color.b) / 3
+              : 0.5;
+
+            if (lightness > 0.7) {
+              // Light parts → neon accent
+              newMat.color = neonGreen;
+              newMat.emissive = neonGreen;
+              newMat.emissiveIntensity = 1.5;
+            } else if (lightness > 0.35) {
+              // Mid parts → metallic gray
+              newMat.color = metalGray;
+              newMat.metalness = 0.8;
+              newMat.roughness = 0.2;
+            } else {
+              // Dark parts → dark metal
+              newMat.color = darkMetal;
+              newMat.metalness = 0.9;
+              newMat.roughness = 0.15;
+            }
+            mesh.material = newMat;
+          }
+        }
+      }
+    });
+
+    eyeMeshes.current = eyes;
+    return cloned;
+  }, [scene, neonGreen, darkMetal, metalGray]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -23,7 +87,7 @@ function RobotModel() {
 
   useFrame(() => {
     if (groupRef.current) {
-      // Smoothly rotate head toward cursor
+      // Smoothly rotate toward cursor
       groupRef.current.rotation.y = THREE.MathUtils.lerp(
         groupRef.current.rotation.y,
         mouse.x * 0.5,
@@ -35,108 +99,41 @@ function RobotModel() {
         0.05
       );
     }
-    // Move eye pupils
-    [eyeLeftRef, eyeRightRef].forEach((ref) => {
-      if (ref.current) {
-        ref.current.position.x = THREE.MathUtils.lerp(ref.current.position.x, mouse.x * 0.05, 0.1);
-        ref.current.position.y = THREE.MathUtils.lerp(ref.current.position.y, 0.15 + mouse.y * 0.05, 0.1);
+
+    // Move eye meshes to follow cursor
+    eyeMeshes.current.forEach((eye) => {
+      if (eye) {
+        const targetX = eye.userData.origX ?? eye.position.x;
+        const targetY = eye.userData.origY ?? eye.position.y;
+        if (eye.userData.origX === undefined) {
+          eye.userData.origX = eye.position.x;
+          eye.userData.origY = eye.position.y;
+        }
+        eye.position.x = THREE.MathUtils.lerp(
+          eye.position.x,
+          targetX + mouse.x * 0.03,
+          0.1
+        );
+        eye.position.y = THREE.MathUtils.lerp(
+          eye.position.y,
+          targetY + mouse.y * 0.03,
+          0.1
+        );
       }
     });
   });
 
-  const neonGreen = new THREE.Color("hsl(160, 100%, 50%)");
-  const darkMetal = new THREE.Color("hsl(220, 20%, 12%)");
-  const metalGray = new THREE.Color("hsl(220, 10%, 25%)");
-
   return (
     <Float speed={2} rotationIntensity={0.3} floatIntensity={0.5}>
-      <group ref={groupRef} position={[0, -0.5, 0]}>
-        {/* Body */}
-        <mesh position={[0, -1.2, 0]}>
-          <boxGeometry args={[1.2, 1.5, 0.8]} />
-          <meshStandardMaterial color={darkMetal} metalness={0.8} roughness={0.2} />
-        </mesh>
-        {/* Body accent lines */}
-        <mesh position={[0, -1.2, 0.41]}>
-          <boxGeometry args={[1.0, 0.05, 0.01]} />
-          <meshStandardMaterial color={neonGreen} emissive={neonGreen} emissiveIntensity={2} />
-        </mesh>
-        <mesh position={[0, -0.8, 0.41]}>
-          <boxGeometry args={[0.6, 0.05, 0.01]} />
-          <meshStandardMaterial color={neonGreen} emissive={neonGreen} emissiveIntensity={1} />
-        </mesh>
-        {/* Chest light */}
-        <mesh position={[0, -1.0, 0.41]}>
-          <circleGeometry args={[0.12, 16]} />
-          <meshStandardMaterial color={neonGreen} emissive={neonGreen} emissiveIntensity={3} />
-        </mesh>
-
-        {/* Neck */}
-        <mesh position={[0, -0.3, 0]}>
-          <cylinderGeometry args={[0.15, 0.2, 0.3, 8]} />
-          <meshStandardMaterial color={metalGray} metalness={0.9} roughness={0.1} />
-        </mesh>
-
-        {/* Head */}
-        <mesh position={[0, 0.15, 0]}>
-          <boxGeometry args={[0.9, 0.7, 0.7]} />
-          <meshStandardMaterial color={darkMetal} metalness={0.8} roughness={0.2} />
-        </mesh>
-        {/* Visor */}
-        <mesh position={[0, 0.15, 0.36]}>
-          <boxGeometry args={[0.75, 0.35, 0.02]} />
-          <meshStandardMaterial color={neonGreen} emissive={neonGreen} emissiveIntensity={0.5} transparent opacity={0.3} />
-        </mesh>
-        {/* Eyes */}
-        <mesh position={[-0.18, 0.15, 0.36]}>
-          <circleGeometry args={[0.1, 16]} />
-          <meshStandardMaterial color={neonGreen} emissive={neonGreen} emissiveIntensity={3} />
-        </mesh>
-        <mesh position={[0.18, 0.15, 0.36]}>
-          <circleGeometry args={[0.1, 16]} />
-          <meshStandardMaterial color={neonGreen} emissive={neonGreen} emissiveIntensity={3} />
-        </mesh>
-        {/* Pupils */}
-        <mesh ref={eyeLeftRef} position={[-0.18, 0.15, 0.37]}>
-          <circleGeometry args={[0.04, 16]} />
-          <meshStandardMaterial color={darkMetal} />
-        </mesh>
-        <mesh ref={eyeRightRef} position={[0.18, 0.15, 0.37]}>
-          <circleGeometry args={[0.04, 16]} />
-          <meshStandardMaterial color={darkMetal} />
-        </mesh>
-        {/* Antenna */}
-        <mesh position={[0, 0.6, 0]}>
-          <cylinderGeometry args={[0.02, 0.02, 0.3, 6]} />
-          <meshStandardMaterial color={metalGray} metalness={0.9} roughness={0.1} />
-        </mesh>
-        <mesh position={[0, 0.78, 0]}>
-          <sphereGeometry args={[0.06, 8, 8]} />
-          <meshStandardMaterial color={neonGreen} emissive={neonGreen} emissiveIntensity={4} />
-        </mesh>
-
-        {/* Arms */}
-        <mesh position={[-0.85, -1.0, 0]}>
-          <cylinderGeometry args={[0.1, 0.08, 1.0, 8]} />
-          <meshStandardMaterial color={metalGray} metalness={0.8} roughness={0.2} />
-        </mesh>
-        <mesh position={[0.85, -1.0, 0]}>
-          <cylinderGeometry args={[0.1, 0.08, 1.0, 8]} />
-          <meshStandardMaterial color={metalGray} metalness={0.8} roughness={0.2} />
-        </mesh>
-        {/* Hands */}
-        <mesh position={[-0.85, -1.55, 0]}>
-          <sphereGeometry args={[0.12, 8, 8]} />
-          <meshStandardMaterial color={neonGreen} emissive={neonGreen} emissiveIntensity={1} />
-        </mesh>
-        <mesh position={[0.85, -1.55, 0]}>
-          <sphereGeometry args={[0.12, 8, 8]} />
-          <meshStandardMaterial color={neonGreen} emissive={neonGreen} emissiveIntensity={1} />
-        </mesh>
+      <group ref={groupRef}>
+        <primitive object={clonedScene} scale={1.5} />
       </group>
     </Float>
   );
 }
+
+// Preload model
+useGLTF.preload("/models/robot.glb");
 
 export default function HeroRobot() {
   return (
@@ -145,7 +142,13 @@ export default function HeroRobot() {
         <ambientLight intensity={0.3} />
         <pointLight position={[5, 5, 5]} intensity={1} color="#00ffaa" />
         <pointLight position={[-5, -3, 5]} intensity={0.5} color="#aa00ff" />
-        <spotLight position={[0, 5, 3]} intensity={0.8} angle={0.5} penumbra={0.5} color="#00ffaa" />
+        <spotLight
+          position={[0, 5, 3]}
+          intensity={0.8}
+          angle={0.5}
+          penumbra={0.5}
+          color="#00ffaa"
+        />
         <RobotModel />
         <Environment preset="night" />
       </Canvas>
