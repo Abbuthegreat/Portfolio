@@ -126,7 +126,7 @@ function RobotModel() {
   return (
     <Float speed={2} rotationIntensity={0.3} floatIntensity={0.5}>
       <group ref={groupRef}>
-        <primitive object={clonedScene} scale={1.5} />
+        <primitive object={clonedScene} scale={5} />
       </group>
     </Float>
   );
