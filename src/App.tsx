@@ -6,6 +6,8 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Contact from "./pages/Contact";
 import NotFound from "./pages/NotFound";
+import CursorEffect from "./components/CursorEffect";
+import ScrollProgressBar from "./components/ScrollProgressBar";
 
 const queryClient = new QueryClient();
 
@@ -14,6 +16,9 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
+      {/* Neon cursor effect & scroll progress bar — render above everything */}
+      <CursorEffect />
+      <ScrollProgressBar />
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />

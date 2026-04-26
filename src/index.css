@@ -54,15 +54,34 @@
 @layer base {
   * {
     @apply border-border;
+    box-sizing: border-box;
+    min-width: 0; /* prevent flex/grid children from overflowing */
+  }
+
+  html {
+    overflow-x: hidden;
+    scroll-behavior: smooth;
   }
 
   body {
     @apply bg-background text-foreground font-body;
     overflow-x: hidden;
+    min-width: 320px; /* graceful floor for very small screens */
+    -webkit-tap-highlight-color: transparent;
   }
 
   h1, h2, h3, h4, h5, h6 {
     @apply font-display;
+    word-break: break-word;
+  }
+
+  p, span, a {
+    overflow-wrap: break-word;
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
   }
 
   ::selection {
@@ -71,7 +90,7 @@
   }
 
   ::-webkit-scrollbar {
-    width: 6px;
+    width: 4px;
   }
   ::-webkit-scrollbar-track {
     background: hsl(220 20% 4%);
@@ -107,3 +126,11 @@
     background-size: 60px 60px;
   }
 }
+
+/* Hide default cursor on pointer/mouse devices only — custom cursor takes over */
+@media (pointer: fine) {
+  * {
+    cursor: none !important;
+  }
+}
+

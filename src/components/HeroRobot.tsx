@@ -1,144 +1,138 @@
-import { useRef, useState, useEffect, useMemo } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { Float, Environment, useGLTF } from "@react-three/drei";
+import { useRef } from "react";
+import { Canvas, ThreeEvent, useFrame } from "@react-three/fiber";
+import { Environment, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 
 function RobotModel() {
   const groupRef = useRef<THREE.Group>(null);
-  const [mouse, setMouse] = useState({ x: 0, y: 0 });
-  const eyeMeshes = useRef<THREE.Mesh[]>([]);
-  const { scene } = useGLTF("/models/robot.glb");
+  const baseRotation = useRef(new THREE.Euler(0, 0, 0));
+  const targetRotation = useRef(new THREE.Euler(0, 0, 0));
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
+  const isDragging = useRef(false);
+  const isHovering = useRef(false);
+  const hasBaseRotation = useRef(false);
+  const targetScale = useRef(new THREE.Vector3(1, 1, 1));
 
-  const neonGreen = useMemo(() => new THREE.Color("hsl(160, 100%, 50%)"), []);
-  const darkMetal = useMemo(() => new THREE.Color("hsl(220, 20%, 12%)"), []);
-  const metalGray = useMemo(() => new THREE.Color("hsl(220, 10%, 25%)"), []);
+  const { scene } = useGLTF("/models/Dazzling%20Jofo-Waasa.glb");
 
-  // Clone scene and apply theme colors + find eyes
-  const clonedScene = useMemo(() => {
-    const cloned = scene.clone(true);
-    const eyes: THREE.Mesh[] = [];
-
-    cloned.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh;
-        const name = mesh.name.toLowerCase();
-
-        // Try to detect eyes by name
-        const isEye =
-          name.includes("eye") ||
-          name.includes("pupil") ||
-          name.includes("iris") ||
-          name.includes("cornea") ||
-          name.includes("lens");
-
-        if (isEye) {
-          eyes.push(mesh);
-          // Make eyes glow neon green
-          mesh.material = new THREE.MeshStandardMaterial({
-            color: neonGreen,
-            emissive: neonGreen,
-            emissiveIntensity: 3,
-          });
-        } else {
-          // Theme the rest of the robot
-          const mat = mesh.material as THREE.MeshStandardMaterial;
-          if (mat && mat.isMeshStandardMaterial) {
-            const newMat = mat.clone();
-            const lightness = mat.color
-              ? (mat.color.r + mat.color.g + mat.color.b) / 3
-              : 0.5;
-
-            if (lightness > 0.7) {
-              // Light parts → neon accent
-              newMat.color = neonGreen;
-              newMat.emissive = neonGreen;
-              newMat.emissiveIntensity = 1.5;
-            } else if (lightness > 0.35) {
-              // Mid parts → metallic gray
-              newMat.color = metalGray;
-              newMat.metalness = 0.8;
-              newMat.roughness = 0.2;
-            } else {
-              // Dark parts → dark metal
-              newMat.color = darkMetal;
-              newMat.metalness = 0.9;
-              newMat.roughness = 0.15;
-            }
-            mesh.material = newMat;
-          }
-        }
-      }
-    });
-
-    eyeMeshes.current = eyes;
-    return cloned;
-  }, [scene, neonGreen, darkMetal, metalGray]);
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      setMouse({
-        x: (e.clientX / window.innerWidth) * 2 - 1,
-        y: -(e.clientY / window.innerHeight) * 2 + 1,
-      });
-    };
-    window.addEventListener("mousemove", handleMouseMove);
-    return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, []);
+  const modelPosition: [number, number, number] = [0, -2.0, 0];
 
   useFrame(() => {
-    if (groupRef.current) {
-      // Smoothly rotate toward cursor
-      groupRef.current.rotation.y = THREE.MathUtils.lerp(
-        groupRef.current.rotation.y,
-        mouse.x * 0.5,
-        0.05
-      );
-      groupRef.current.rotation.x = THREE.MathUtils.lerp(
-        groupRef.current.rotation.x,
-        mouse.y * 0.3,
-        0.05
-      );
+    if (!groupRef.current) {
+      return;
     }
 
-    // Move eye meshes to follow cursor
-    eyeMeshes.current.forEach((eye) => {
-      if (eye) {
-        const targetX = eye.userData.origX ?? eye.position.x;
-        const targetY = eye.userData.origY ?? eye.position.y;
-        if (eye.userData.origX === undefined) {
-          eye.userData.origX = eye.position.x;
-          eye.userData.origY = eye.position.y;
-        }
-        eye.position.x = THREE.MathUtils.lerp(
-          eye.position.x,
-          targetX + mouse.x * 0.03,
-          0.1
-        );
-        eye.position.y = THREE.MathUtils.lerp(
-          eye.position.y,
-          targetY + mouse.y * 0.03,
-          0.1
-        );
-      }
-    });
+    if (!hasBaseRotation.current) {
+      baseRotation.current.copy(groupRef.current.rotation);
+      targetRotation.current.copy(groupRef.current.rotation);
+      hasBaseRotation.current = true;
+    }
+
+    groupRef.current.rotation.x = THREE.MathUtils.lerp(
+      groupRef.current.rotation.x,
+      targetRotation.current.x,
+      0.15
+    );
+    groupRef.current.rotation.y = THREE.MathUtils.lerp(
+      groupRef.current.rotation.y,
+      targetRotation.current.y,
+      0.15
+    );
+
+    const hoverScale = isHovering.current ? 1.03 : 1.0;
+    targetScale.current.set(hoverScale, hoverScale, hoverScale);
+    groupRef.current.scale.lerp(targetScale.current, 0.12);
   });
 
+  const handlePointerDown = (event: ThreeEvent<PointerEvent>) => {
+    event.stopPropagation();
+    const target = event.currentTarget as Element;
+    if (target.setPointerCapture) {
+      target.setPointerCapture(event.pointerId);
+    }
+    isDragging.current = true;
+    lastPointer.current = { x: event.clientX, y: event.clientY };
+  };
+
+  const handlePointerUp = (event: ThreeEvent<PointerEvent>) => {
+    event.stopPropagation();
+    const target = event.currentTarget as Element;
+    if (target.releasePointerCapture) {
+      target.releasePointerCapture(event.pointerId);
+    }
+    isDragging.current = false;
+    lastPointer.current = null;
+    targetRotation.current.copy(baseRotation.current);
+  };
+
+  const handlePointerMove = (event: ThreeEvent<PointerEvent>) => {
+    if (!isDragging.current || !lastPointer.current) {
+      return;
+    }
+
+    const deltaX = event.clientX - lastPointer.current.x;
+    const deltaY = event.clientY - lastPointer.current.y;
+
+    targetRotation.current.y += deltaX * 0.005;
+    targetRotation.current.x += deltaY * 0.005;
+    targetRotation.current.x = THREE.MathUtils.clamp(
+      targetRotation.current.x,
+      -0.6,
+      0.6
+    );
+
+    lastPointer.current = { x: event.clientX, y: event.clientY };
+  };
+
+  const handlePointerOver = () => {
+    isHovering.current = true;
+  };
+
+  const handlePointerOut = (event: ThreeEvent<PointerEvent>) => {
+    // Only reset if we're not dragging and actually leaving the canvas
+    if (!isDragging.current) {
+      const target = event.currentTarget as Element;
+      const rect = target.getBoundingClientRect();
+      
+      // Check if pointer is actually outside the canvas
+      if (
+        event.clientX < rect.left ||
+        event.clientX > rect.right ||
+        event.clientY < rect.top ||
+        event.clientY > rect.bottom
+      ) {
+        isHovering.current = false;
+        targetRotation.current.copy(baseRotation.current);
+      }
+    }
+  };
+
   return (
-    <Float speed={2} rotationIntensity={0.3} floatIntensity={0.5}>
-      <group ref={groupRef}>
-        <primitive object={clonedScene} scale={5} />
-      </group>
-    </Float>
+    <group
+      ref={groupRef}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onPointerMove={handlePointerMove}
+      onPointerOver={handlePointerOver}
+      onPointerOut={handlePointerOut}
+    >
+      <primitive object={scene} scale={50} position={modelPosition} />
+    </group>
   );
 }
 
 // Preload model
-useGLTF.preload("/models/robot.glb");
+useGLTF.preload("/models/Dazzling%20Jofo-Waasa.glb");
 
 export default function HeroRobot() {
   return (
     <div className="w-full h-full">
-      <Canvas camera={{ position: [0, 0, 4.5], fov: 50 }}>
+      <Canvas
+        camera={{ position: [0, 0, 4.5], fov: 50 }}
+        className="bg-transparent"
+        gl={{ alpha: true }}
+      >
         <ambientLight intensity={0.3} />
         <pointLight position={[5, 5, 5]} intensity={1} color="#00ffaa" />
         <pointLight position={[-5, -3, 5]} intensity={0.5} color="#aa00ff" />
